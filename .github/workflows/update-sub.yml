@@ -2,7 +2,7 @@ name: Update Subscription
 
 on:
   schedule:
-    - cron: '0 */2 * * *'   # هر ۲ ساعت یک بار
+    - cron: '0 */2 * * *'
   workflow_dispatch:
 
 env:
@@ -113,7 +113,10 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add subscription.txt
-          git diff --quiet && git diff --staged --quiet || (
-            git pull --rebase origin main &&
+          if git diff --quiet && git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Auto-update subscription"
+            git pull --rebase origin main
             git push origin main
-          )
+          fi
