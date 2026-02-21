@@ -170,7 +170,6 @@ def test_one_config_real(line: str, socks_port: int) -> Optional[Tuple[str, floa
     try:
         config_json = create_vless_config(line, socks_port)
     except Exception as e:
-        # اگر خطا در ساخت کانفیگ، بی‌صدا رد کن
         return None
 
     config_file = f"temp_config_{socks_port}.json"
@@ -180,7 +179,6 @@ def test_one_config_real(line: str, socks_port: int) -> Optional[Tuple[str, floa
     error_log = f"xray_error_{socks_port}.log"
     proc = None
     try:
-        # این بار stderr را به فایل هدایت می‌کنیم تا در صورت خطا ببینیم چه شده
         with open(error_log, 'w') as errf:
             proc = subprocess.Popen([XRAY_PATH, "-c", config_file], stdout=subprocess.DEVNULL, stderr=errf)
             time.sleep(2)
@@ -195,7 +193,6 @@ def test_one_config_real(line: str, socks_port: int) -> Optional[Tuple[str, floa
                 country = get_country_code(host_port[0]) if host_port else 'XX'
                 return (add_flag(line, country), latency)
     except Exception as e:
-        # در صورت خطا، فایل خطا را چاپ کنیم
         if os.path.exists(error_log):
             with open(error_log, 'r') as errf:
                 err_content = errf.read().strip()
