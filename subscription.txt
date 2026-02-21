@@ -1,0 +1,3 @@
+# This file will be auto-updated by GitHub Actions
+# Last update: 2026-02-21 09:32:58
+# Subscription configs will appear here after first workflow run
