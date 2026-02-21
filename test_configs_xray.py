@@ -10,22 +10,20 @@ import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, Tuple
 
-# ================== تنظیمات قابل تغییر ==================
-TIMEOUT = 15                    # زمان انتظار برای پاسخ (ثانیه) - افزایش یافت
-THRESHOLD_MS = 600               # حداکثر تأخیر مجاز (میلی‌ثانیه)
-MAX_WORKERS = 20                  # تعداد نخ‌های همزمان (کاهش برای پایداری)
-TEST_URL = "http://cp.cloudflare.com/generate_204"  # آدرس تست جایگزین
+# ================== تنظیمات ==================
+TIMEOUT = 15
+THRESHOLD_MS = 600
+MAX_WORKERS = 20
+TEST_URL = "http://cp.cloudflare.com/generate_204"
 XRAY_PATH = "./xray-core/xray"
 SOCKS_PORT_START = 10000
 REQUEST_DELAY = 0.02
-# ======================================================
+# =============================================
 
 def extract_host_port(vless_url: str) -> Optional[Tuple[str, int]]:
-    """استخراج host و پورت از لینک vless، پشتیبانی از IPv6 و domain"""
     try:
         parsed = urllib.parse.urlparse(vless_url)
         netloc = parsed.netloc.split('@')[-1].split('/')[0].split('?')[0]
-
         if netloc.startswith('['):
             bracket_end = netloc.find(']')
             if bracket_end == -1:
@@ -48,7 +46,6 @@ def extract_host_port(vless_url: str) -> Optional[Tuple[str, int]]:
         return None
 
 def get_country_code(host: str) -> str:
-    """دریافت کد دو حرفی کشور با ip-api.com"""
     try:
         ip = socket.gethostbyname(host)
         time.sleep(REQUEST_DELAY)
@@ -60,19 +57,13 @@ def get_country_code(host: str) -> str:
     return 'XX'
 
 def add_flag(config: str, country: str) -> str:
-    """اضافه کردن پرچم به نام کانفیگ"""
     if '#' not in config:
         return f"{config}#{country}"
     base, name = config.rsplit('#', 1)
     return f"{base}#{country} {name}"
 
 def create_vless_config(vless_url: str, socks_port: int) -> dict:
-    """
-    تبدیل لینک vless به کانفیگ Xray (ساده‌شده و بهینه)
-    فقط شامل inbound SOCKS و outbound VLESS - بدون routing و DNS اضافی
-    """
     parsed = urllib.parse.urlparse(vless_url)
-    # استخراج UUID و host/port
     userinfo, server = parsed.netloc.split('@', 1)
     uuid = userinfo
 
@@ -81,10 +72,8 @@ def create_vless_config(vless_url: str, socks_port: int) -> dict:
         raise ValueError("Cannot extract host/port")
     address, port = host_port
 
-    # پارس query string
     query = urllib.parse.parse_qs(parsed.query)
 
-    # تنظیمات outbound
     outbound_settings = {
         "vnext": [{
             "address": address,
@@ -96,7 +85,6 @@ def create_vless_config(vless_url: str, socks_port: int) -> dict:
         }]
     }
 
-    # تنظیمات stream
     stream_settings = {}
     protocol_type = query.get('type', ['tcp'])[0]
     security = query.get('security', ['none'])[0]
@@ -131,7 +119,6 @@ def create_vless_config(vless_url: str, socks_port: int) -> dict:
             grpc_settings["serviceName"] = query['path'][0]
         stream_settings["grpcSettings"] = grpc_settings
 
-    # تنظیمات امنیتی
     if security == 'tls':
         stream_settings["security"] = "tls"
         tls_settings = {}
@@ -163,7 +150,6 @@ def create_vless_config(vless_url: str, socks_port: int) -> dict:
     else:
         stream_settings["security"] = "none"
 
-    # ساختار نهایی - بدون routing و DNS
     config = {
         "log": {"loglevel": "none"},
         "inbounds": [{
@@ -181,33 +167,40 @@ def create_vless_config(vless_url: str, socks_port: int) -> dict:
     return config
 
 def test_one_config_real(line: str, socks_port: int) -> Optional[Tuple[str, float]]:
-    """تست یک کانفیگ با راه‌اندازی Xray و اندازه‌گیری تأخیر"""
     try:
         config_json = create_vless_config(line, socks_port)
     except Exception as e:
-        # اگر خطایی در ساخت کانفیگ رخ داد، فقط None برگردان
+        # اگر خطا در ساخت کانفیگ، بی‌صدا رد کن
         return None
 
     config_file = f"temp_config_{socks_port}.json"
     with open(config_file, 'w') as f:
         json.dump(config_json, f)
 
+    error_log = f"xray_error_{socks_port}.log"
     proc = None
     try:
-        proc = subprocess.Popen([XRAY_PATH, "-c", config_file], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(1.5)  # صبر برای آماده‌سازی
+        # این بار stderr را به فایل هدایت می‌کنیم تا در صورت خطا ببینیم چه شده
+        with open(error_log, 'w') as errf:
+            proc = subprocess.Popen([XRAY_PATH, "-c", config_file], stdout=subprocess.DEVNULL, stderr=errf)
+            time.sleep(2)
 
-        proxies = {"http": f"socks5://127.0.0.1:{socks_port}", "https": f"socks5://127.0.0.1:{socks_port}"}
-        start = time.time()
-        resp = requests.get(TEST_URL, proxies=proxies, timeout=TIMEOUT)
-        latency = (time.time() - start) * 1000
+            proxies = {"http": f"socks5://127.0.0.1:{socks_port}", "https": f"socks5://127.0.0.1:{socks_port}"}
+            start = time.time()
+            resp = requests.get(TEST_URL, proxies=proxies, timeout=TIMEOUT)
+            latency = (time.time() - start) * 1000
 
-        if resp.status_code == 204 and latency < THRESHOLD_MS:
-            host_port = extract_host_port(line)
-            country = get_country_code(host_port[0]) if host_port else 'XX'
-            return (add_flag(line, country), latency)
-    except Exception:
-        pass
+            if resp.status_code == 204 and latency < THRESHOLD_MS:
+                host_port = extract_host_port(line)
+                country = get_country_code(host_port[0]) if host_port else 'XX'
+                return (add_flag(line, country), latency)
+    except Exception as e:
+        # در صورت خطا، فایل خطا را چاپ کنیم
+        if os.path.exists(error_log):
+            with open(error_log, 'r') as errf:
+                err_content = errf.read().strip()
+                if err_content:
+                    print(f"Xray error for {line[:80]}: {err_content}")
     finally:
         if proc:
             proc.terminate()
@@ -215,8 +208,9 @@ def test_one_config_real(line: str, socks_port: int) -> Optional[Tuple[str, floa
                 proc.wait(timeout=2)
             except subprocess.TimeoutExpired:
                 proc.kill()
-        if os.path.exists(config_file):
-            os.remove(config_file)
+        for f in [config_file, error_log]:
+            if os.path.exists(f):
+                os.remove(f)
     return None
 
 def main():
