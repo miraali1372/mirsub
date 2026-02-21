@@ -1,4 +1,4 @@
-# test_configs_xray.py
+# test_configs_xray.py (نسخه نهایی با پشتیبانی IPv6)
 import subprocess
 import time
 import json
@@ -10,30 +10,49 @@ import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, Tuple
 
-TIMEOUT = 10               # زمان انتظار برای پاسخ (ثانیه)
-THRESHOLD_MS = 600         # حداکثر تأخیر مجاز (میلی‌ثانیه)
-MAX_WORKERS = 30           # تعداد نخ‌های همزمان (کمتر از قبل به دلیل سنگینی)
+TIMEOUT = 10
+THRESHOLD_MS = 600
+MAX_WORKERS = 30
 TEST_URL = "https://www.google.com/generate_204"
 XRAY_PATH = "./xray-core/xray"
-SOCKS_PORT_START = 10000   # پورت پایه برای شروع تخصیص پورت SOCKS
-REQUEST_DELAY = 0.02       # تأخیر بین درخواست‌های ip-api
+SOCKS_PORT_START = 10000
+REQUEST_DELAY = 0.02
 
 def extract_host_port(vless_url: str) -> Optional[Tuple[str, int]]:
-    """استخراج host و پورت از لینک vless://"""
+    """استخراج host و پورت از لینک vless، پشتیبانی از IPv6 و domain"""
     try:
         parsed = urllib.parse.urlparse(vless_url)
+        # بعد از @ را بگیر (رفع userinfo)
         netloc = parsed.netloc.split('@')[-1]
-        if ':' in netloc:
-            host, port_str = netloc.split(':', 1)
-            port = int(port_str.split('/')[0].split('?')[0])
-            return host, port
+
+        # جدا کردن مسیر و query از پورت
+        netloc = netloc.split('/')[0].split('?')[0]
+
+        # بررسی IPv6 (با براکت)
+        if netloc.startswith('['):
+            # فرمت [IPv6]:port
+            bracket_end = netloc.find(']')
+            if bracket_end == -1:
+                return None
+            host = netloc[1:bracket_end]
+            remainder = netloc[bracket_end+1:]
+            if remainder.startswith(':'):
+                port = int(remainder[1:])
+            else:
+                port = 443
         else:
-            return netloc, 443
+            # IPv4 یا domain
+            if ':' in netloc:
+                host, port_str = netloc.split(':', 1)
+                port = int(port_str)
+            else:
+                host = netloc
+                port = 443
+        return host, port
     except Exception:
         return None
 
 def get_country_code(host: str) -> str:
-    """دریافت کد دو حرفی کشور با ip-api.com"""
     try:
         ip = socket.gethostbyname(host)
         time.sleep(REQUEST_DELAY)
@@ -45,48 +64,48 @@ def get_country_code(host: str) -> str:
     return 'XX'
 
 def add_flag(config: str, country: str) -> str:
-    """اضافه کردن پرچم به نام کانفیگ"""
     if '#' not in config:
         return f"{config}#{country}"
     base, name = config.rsplit('#', 1)
     return f"{base}#{country} {name}"
 
 def create_vless_config(vless_url: str, socks_port: int) -> dict:
-    """
-    تبدیل لینک vless به کانفیگ JSON برای Xray
-    پشتیبانی از پارامترهای رایج: type (tcp/ws/grpc), security (tls/reality/none), host, path, sni, etc.
-    """
+    """تبدیل لینک vless به کانفیگ Xray با پشتیبانی کامل از پارامترها"""
     parsed = urllib.parse.urlparse(vless_url)
-    # استخراج UUID و سرور
+    # استخراج userinfo (UUID) و netloc
     userinfo, server = parsed.netloc.split('@', 1)
     uuid = userinfo
-    if ':' in server:
-        address, port_str = server.split(':', 1)
-        port = int(port_str.split('/')[0])
-    else:
-        address = server
-        port = 443
 
-    # پارس کردن query string
+    # استخراج host و پورت با تابع جداگانه
+    host_port = extract_host_port(vless_url)
+    if not host_port:
+        raise ValueError("Cannot extract host/port")
+    address, port = host_port
+
+    # پارس query string
     query = urllib.parse.parse_qs(parsed.query)
-    # مقادیر پیش‌فرض
-    stream_settings = {}
+
+    # تنظیمات outbound
     outbound_settings = {
         "vnext": [{
             "address": address,
             "port": port,
-            "users": [{"id": uuid, "encryption": query.get('encryption', ['none'])[0]}]
+            "users": [{
+                "id": uuid,
+                "encryption": query.get('encryption', ['none'])[0]
+            }]
         }]
     }
 
-    # تنظیم streamSettings بر اساس type و security
+    # تنظیمات stream
+    stream_settings = {}
     protocol_type = query.get('type', ['tcp'])[0]
     security = query.get('security', ['none'])[0]
 
     if protocol_type == 'tcp':
         stream_settings["network"] = "tcp"
         if 'headerType' in query and query['headerType'][0] == 'http':
-            stream_settings["tcpSettings"] = {
+            tcp_settings = {
                 "header": {
                     "type": "http",
                     "request": {
@@ -95,6 +114,7 @@ def create_vless_config(vless_url: str, socks_port: int) -> dict:
                     }
                 }
             }
+            stream_settings["tcpSettings"] = tcp_settings
     elif protocol_type == 'ws':
         stream_settings["network"] = "ws"
         ws_settings = {}
@@ -122,7 +142,7 @@ def create_vless_config(vless_url: str, socks_port: int) -> dict:
             tls_settings["serverName"] = query['host'][0].split(',')[0]
         if 'alpn' in query:
             tls_settings["alpn"] = query['alpn'][0].split(',')
-        if 'fingerprint' in query or 'fp' in query:
+        if 'fp' in query or 'fingerprint' in query:
             tls_settings["fingerprint"] = query.get('fp', query.get('fingerprint', ['chrome']))[0]
         if 'allowInsecure' in query or 'insecure' in query:
             tls_settings["allowInsecure"] = query.get('insecure', query.get('allowInsecure', ['0']))[0] == '1'
@@ -144,7 +164,7 @@ def create_vless_config(vless_url: str, socks_port: int) -> dict:
     else:
         stream_settings["security"] = "none"
 
-    # ساختار نهایی کانفیگ
+    # ساختار نهایی
     config = {
         "log": {"loglevel": "none"},
         "inbounds": [{
@@ -162,20 +182,22 @@ def create_vless_config(vless_url: str, socks_port: int) -> dict:
     return config
 
 def test_one_config_real(line: str, socks_port: int) -> Optional[Tuple[str, float]]:
-    """تست یک کانفیگ با راه‌اندازی واقعی Xray و اندازه‌گیری تأخیر از طریق پروکسی SOCKS"""
-    # ساخت کانفیگ JSON
-    config_json = create_vless_config(line, socks_port)
+    """تست یک کانفیگ با راه‌اندازی Xray و اندازه‌گیری تأخیر"""
+    try:
+        config_json = create_vless_config(line, socks_port)
+    except Exception as e:
+        # اگر خطایی در ساخت کانفیگ رخ داد، ignore کن
+        return None
+
     config_file = f"temp_config_{socks_port}.json"
     with open(config_file, 'w') as f:
         json.dump(config_json, f)
 
     proc = None
     try:
-        # راه‌اندازی Xray
         proc = subprocess.Popen([XRAY_PATH, "-c", config_file], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(1.5)  # صبر برای آماده شدن پروکسی (کمی بیشتر)
+        time.sleep(1.5)  # صبر برای آماده‌سازی
 
-        # تست از طریق پروکسی SOCKS
         proxies = {"http": f"socks5://127.0.0.1:{socks_port}", "https": f"socks5://127.0.0.1:{socks_port}"}
         start = time.time()
         resp = requests.get(TEST_URL, proxies=proxies, timeout=TIMEOUT)
@@ -185,8 +207,7 @@ def test_one_config_real(line: str, socks_port: int) -> Optional[Tuple[str, floa
             host_port = extract_host_port(line)
             country = get_country_code(host_port[0]) if host_port else 'XX'
             return (add_flag(line, country), latency)
-    except Exception as e:
-        # در صورت خطا، صرفاً None برگردان
+    except Exception:
         pass
     finally:
         if proc:
@@ -216,7 +237,6 @@ def main():
     valid = []
     futures = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        # ارسال وظایف با پورت‌های یکتا
         for idx, line in enumerate(lines):
             socks_port = SOCKS_PORT_START + idx
             futures.append(executor.submit(test_one_config_real, line, socks_port))
