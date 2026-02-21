@@ -8,9 +8,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, Tuple
 
 # ================== تنظیمات ==================
-TIMEOUT = 10                    # زمان انتظار برای اتصال (ثانیه)
-THRESHOLD_MS = 200              # حداکثر تأخیر مجاز (میلی‌ثانیه) - افزایش یافته
-MAX_WORKERS = 200                # تعداد نخ‌های همزمان
+TIMEOUT = 2                    # زمان انتظار برای اتصال (ثانیه)
+THRESHOLD_MS = 150              # حداکثر تأخیر مجاز (میلی‌ثانیه) - افزایش یافته
+MAX_WORKERS = 20                # تعداد نخ‌های همزمان
 REQUEST_DELAY = 0.02             # تأخیر بین درخواست‌های ip-api
 # =============================================
 
