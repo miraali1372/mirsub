@@ -5,48 +5,127 @@ on:
     - cron: '0 * * * *'
   workflow_dispatch:
 
+# تعریف تعداد رانرهای موازی (مثلاً 4 تا)
+env:
+  NUM_RUNNERS: 4
+
 jobs:
-  build:
+  # Job شماره 1: گرفتن لیست و split کردنش
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.split.outputs.matrix }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Fetch Raw Configs
+        run: |
+          curl -L -o raw.txt "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt"
+          echo "Total configs fetched:"
+          wc -l raw.txt
+
+      - name: Remove Duplicates and Comments
+        run: |
+          grep -v "^#" raw.txt | grep -v "^$" | sort | uniq > unique.txt
+
+      - name: Split configs into chunks
+        id: split
+        run: |
+          # این کار یه ماتریس برای اجرای موازی می‌سازه
+          total_lines=$(wc -l < unique.txt)
+          chunk_size=$(( ($total_lines + $NUM_RUNNERS - 1) / $NUM_RUNNERS ))
+          
+          # فایل unique.txt رو نگه دار برای jobهای بعدی
+          echo "Chunk size: $chunk_size"
+          
+          # ساختن یه ماتریس شامل شماره رانرها
+          matrix_json="{\"runner\":["
+          for i in $(seq 1 $NUM_RUNNERS); do
+            matrix_json+="\"$i\""
+            if [ $i -lt $NUM_RUNNERS ]; then
+              matrix_json+=","
+            fi
+          done
+          matrix_json+="]}"
+          echo "matrix=$matrix_json" >> $GITHUB_OUTPUT
+          
+          # ذخیره فایل یکتا شده برای jobهای بعدی (به عنوان artifact)
+          mkdir -p share
+          cp unique.txt share/unique.txt
+
+      - name: Upload unique.txt for test jobs
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-unique
+          path: share/
+
+  # Job شماره 2: تست موازی روی هر تیکه
+  test:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+      fail-fast: false
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download unique.txt
+        uses: actions/download-artifact@v4
+        with:
+          name: shared-unique
+          path: ./
+
+      - name: Get my chunk of configs
+        run: |
+          total_lines=$(wc -l < unique.txt)
+          chunk_size=$(( ($total_lines + $NUM_RUNNERS - 1) / $NUM_RUNNERS ))
+          start_line=$(( (${{ matrix.runner }} - 1) * $chunk_size + 1 ))
+          end_line=$(( ${{ matrix.runner }} * $chunk_size ))
+          
+          # استخراج تیکه مربوط به این رانر
+          sed -n "${start_line},${end_line}p" unique.txt > my_chunk.txt
+          echo "Testing chunk ${{ matrix.runner }} ($(wc -l < my_chunk.txt) configs)"
+
+      - name: Test and Filter Configs
+        run: |
+          python3 test_configs.py my_chunk.txt result_${{ matrix.runner }}.txt
+
+      - name: Upload result chunk
+        uses: actions/upload-artifact@v4
+        with:
+          name: result-chunk-${{ matrix.runner }}
+          path: result_${{ matrix.runner }}.txt
+
+  # Job شماره 3: جمع‌آوری نتایج
+  merge:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
+      - name: Download all result chunks
+        uses: actions/download-artifact@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          pattern: result-chunk-*
+          path: chunks/
+          merge-multiple: true
 
-      - name: Fetch Raw Configs
+      - name: Merge results
         run: |
-          curl -L -o raw.txt "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt"
-          echo "Configs fetched:"
-          wc -l raw.txt || echo "0"
-
-      - name: Remove Duplicates and Comments
-        run: |
-          grep -v "^#" raw.txt | grep -v "^$" | sort | uniq > unique.txt
-          echo "Unique configs:"
-          wc -l unique.txt || echo "0"
-
-      - name: Test and Filter Configs
-        run: |
-          python3 test_configs.py
-          echo "Valid configs:"
-          [ -f result.txt ] && wc -l result.txt || echo "0"
-
-      - name: Update Subscription File
-        run: |
-          if [ -f result.txt ] && [ -s result.txt ]; then
-            cp result.txt subscription.txt
-            echo "✅ subscription.txt updated"
-          else
-            echo "No valid configs found"
-            > subscription.txt
-          fi
+          cat chunks/result_*.txt > subscription.txt
+          echo "Total valid configs: $(wc -l < subscription.txt)"
 
       - name: Commit and Push Changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add subscription.txt
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update subscription" && git push origin main)
+          git diff --quiet && git diff --staged --quiet || (
+            git pull --rebase origin main &&
+            git push origin main
+          )
