@@ -7,6 +7,7 @@ on:
 
 env:
   NUM_RUNNERS: 4
+  THRESHOLD_MS: 150   # مقدار آستانه پینگ
 
 jobs:
   prepare:
@@ -77,9 +78,9 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
-      - name: Test and Filter Configs (TCP Ping with higher threshold)
+      - name: Test and Filter Configs (TCP Ping with threshold)
         run: |
-          python3 test_configs_simple.py my_chunk.txt result_${{ matrix.runner }}.txt
+          python3 test_configs_final.py my_chunk.txt result_${{ matrix.runner }}.txt ${{ env.THRESHOLD_MS }}
 
       - name: Upload result chunk
         uses: actions/upload-artifact@v4
@@ -107,9 +108,47 @@ jobs:
         run: |
           if ls chunks/result_*.txt 1> /dev/null 2>&1; then
             cat chunks/result_*.txt > subscription.txt
-            echo "✅ Total valid configs: $(wc -l < subscription.txt)"
+            echo "✅ Total valid configs after first test: $(wc -l < subscription.txt)"
           else
             echo "⚠️ No result files found!"
+            > subscription.txt
+          fi
+
+      - name: Upload merged subscription for final test
+        uses: actions/upload-artifact@v4
+        with:
+          name: subscription-merged
+          path: subscription.txt
+
+  final_test:
+    needs: merge
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download merged subscription
+        uses: actions/download-artifact@v4
+        with:
+          name: subscription-merged
+          path: ./
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Final test and filter (remove > threshold)
+        run: |
+          python3 test_configs_final.py subscription.txt subscription_final.txt ${{ env.THRESHOLD_MS }}
+
+      - name: Replace subscription with final version
+        run: |
+          if [ -f subscription_final.txt ]; then
+            mv subscription_final.txt subscription.txt
+            echo "✅ Final valid configs: $(wc -l < subscription.txt)"
+          else
+            echo "⚠️ Final test produced no results"
             > subscription.txt
           fi
 
