@@ -1,4 +1,4 @@
-# test_configs_xray.py (نسخه نهایی با پشتیبانی IPv6)
+# test_configs_xray_final.py
 import subprocess
 import time
 import json
@@ -10,27 +10,23 @@ import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, Tuple
 
-TIMEOUT = 10
-THRESHOLD_MS = 600
-MAX_WORKERS = 30
-TEST_URL = "https://www.google.com/generate_204"
+# ================== تنظیمات قابل تغییر ==================
+TIMEOUT = 15                    # زمان انتظار برای پاسخ (ثانیه) - افزایش یافت
+THRESHOLD_MS = 600               # حداکثر تأخیر مجاز (میلی‌ثانیه)
+MAX_WORKERS = 20                  # تعداد نخ‌های همزمان (کاهش برای پایداری)
+TEST_URL = "http://cp.cloudflare.com/generate_204"  # آدرس تست جایگزین
 XRAY_PATH = "./xray-core/xray"
 SOCKS_PORT_START = 10000
 REQUEST_DELAY = 0.02
+# ======================================================
 
 def extract_host_port(vless_url: str) -> Optional[Tuple[str, int]]:
     """استخراج host و پورت از لینک vless، پشتیبانی از IPv6 و domain"""
     try:
         parsed = urllib.parse.urlparse(vless_url)
-        # بعد از @ را بگیر (رفع userinfo)
-        netloc = parsed.netloc.split('@')[-1]
+        netloc = parsed.netloc.split('@')[-1].split('/')[0].split('?')[0]
 
-        # جدا کردن مسیر و query از پورت
-        netloc = netloc.split('/')[0].split('?')[0]
-
-        # بررسی IPv6 (با براکت)
         if netloc.startswith('['):
-            # فرمت [IPv6]:port
             bracket_end = netloc.find(']')
             if bracket_end == -1:
                 return None
@@ -41,7 +37,6 @@ def extract_host_port(vless_url: str) -> Optional[Tuple[str, int]]:
             else:
                 port = 443
         else:
-            # IPv4 یا domain
             if ':' in netloc:
                 host, port_str = netloc.split(':', 1)
                 port = int(port_str)
@@ -53,6 +48,7 @@ def extract_host_port(vless_url: str) -> Optional[Tuple[str, int]]:
         return None
 
 def get_country_code(host: str) -> str:
+    """دریافت کد دو حرفی کشور با ip-api.com"""
     try:
         ip = socket.gethostbyname(host)
         time.sleep(REQUEST_DELAY)
@@ -64,19 +60,22 @@ def get_country_code(host: str) -> str:
     return 'XX'
 
 def add_flag(config: str, country: str) -> str:
+    """اضافه کردن پرچم به نام کانفیگ"""
     if '#' not in config:
         return f"{config}#{country}"
     base, name = config.rsplit('#', 1)
     return f"{base}#{country} {name}"
 
 def create_vless_config(vless_url: str, socks_port: int) -> dict:
-    """تبدیل لینک vless به کانفیگ Xray با پشتیبانی کامل از پارامترها"""
+    """
+    تبدیل لینک vless به کانفیگ Xray (ساده‌شده و بهینه)
+    فقط شامل inbound SOCKS و outbound VLESS - بدون routing و DNS اضافی
+    """
     parsed = urllib.parse.urlparse(vless_url)
-    # استخراج userinfo (UUID) و netloc
+    # استخراج UUID و host/port
     userinfo, server = parsed.netloc.split('@', 1)
     uuid = userinfo
 
-    # استخراج host و پورت با تابع جداگانه
     host_port = extract_host_port(vless_url)
     if not host_port:
         raise ValueError("Cannot extract host/port")
@@ -164,7 +163,7 @@ def create_vless_config(vless_url: str, socks_port: int) -> dict:
     else:
         stream_settings["security"] = "none"
 
-    # ساختار نهایی
+    # ساختار نهایی - بدون routing و DNS
     config = {
         "log": {"loglevel": "none"},
         "inbounds": [{
@@ -186,7 +185,7 @@ def test_one_config_real(line: str, socks_port: int) -> Optional[Tuple[str, floa
     try:
         config_json = create_vless_config(line, socks_port)
     except Exception as e:
-        # اگر خطایی در ساخت کانفیگ رخ داد، ignore کن
+        # اگر خطایی در ساخت کانفیگ رخ داد، فقط None برگردان
         return None
 
     config_file = f"temp_config_{socks_port}.json"
@@ -222,7 +221,7 @@ def test_one_config_real(line: str, socks_port: int) -> Optional[Tuple[str, floa
 
 def main():
     if len(sys.argv) != 3:
-        print("Usage: python test_configs_xray.py <input_file> <output_file>")
+        print("Usage: python test_configs_xray_final.py <input_file> <output_file>")
         sys.exit(1)
 
     input_file = sys.argv[1]
