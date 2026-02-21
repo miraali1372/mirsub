@@ -8,29 +8,39 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Fetch Raw Configs
         run: |
           curl -L -o raw.txt "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt"
+          echo "Configs fetched:"
           wc -l raw.txt || echo "0"
 
       - name: Remove Duplicates and Comments
         run: |
           grep -v "^#" raw.txt | grep -v "^$" | sort | uniq > unique.txt
+          echo "Unique configs:"
           wc -l unique.txt || echo "0"
 
       - name: Test and Filter Configs
         run: |
           python3 test_configs.py
+          echo "Valid configs:"
+          [ -f result.txt ] && wc -l result.txt || echo "0"
 
       - name: Update Subscription File
         run: |
           if [ -f result.txt ] && [ -s result.txt ]; then
             cp result.txt subscription.txt
+            echo "✅ subscription.txt updated"
           else
+            echo "No valid configs found"
             > subscription.txt
           fi
 
@@ -39,7 +49,4 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add subscription.txt
-          if ! git diff --quiet --staged; then
-            git commit -m "Auto-update subscription"
-            git push
-          fi
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update subscription" && git push origin main)
