@@ -2,11 +2,11 @@ name: Update Subscription
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '0 */2 * * *'   # هر ۲ ساعت یک بار
   workflow_dispatch:
 
 env:
-  NUM_RUNNERS: 4   # تعداد رانرهای موازی (همین 4 خوبه، می‌تونی تا 8 هم برش داری)
+  NUM_RUNNERS: 4
 
 jobs:
   prepare:
@@ -33,22 +33,17 @@ jobs:
           total_lines=$(wc -l < unique.txt)
           chunk_size=$(( ($total_lines + $NUM_RUNNERS - 1) / $NUM_RUNNERS ))
           echo "Chunk size: $chunk_size"
-
-          # ساختن یه ماتریس ساده برای رانرها
           matrix_json="{\"runner\":["
           for i in $(seq 1 $NUM_RUNNERS); do
             matrix_json+="\"$i\""
-            if [ $i -lt $NUM_RUNNERS ]; then
-              matrix_json+=","
-            fi
+            [ $i -lt $NUM_RUNNERS ] && matrix_json+=","
           done
           matrix_json+="]}"
           echo "matrix=$matrix_json" >> $GITHUB_OUTPUT
-
           mkdir -p share
           cp unique.txt share/unique.txt
 
-      - name: Upload unique.txt for test jobs
+      - name: Upload unique.txt
         uses: actions/upload-artifact@v4
         with:
           name: shared-unique
@@ -79,9 +74,12 @@ jobs:
           sed -n "${start_line},${end_line}p" unique.txt > my_chunk.txt
           echo "🔹 Runner ${{ matrix.runner }} testing $(wc -l < my_chunk.txt) configs"
 
-      - name: Test and Filter Configs (with country flag)
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Test and Filter Configs (parallel inside runner)
         run: |
-          python3 test_configs.py my_chunk.txt result_${{ matrix.runner }}.txt
+          python3 test_configs_parallel.py my_chunk.txt result_${{ matrix.runner }}.txt
 
       - name: Upload result chunk
         uses: actions/upload-artifact@v4
