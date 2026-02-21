@@ -84,9 +84,96 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
+      - name: Test a single known config manually
+        run: |
+          # یک لینک نمونه از my_chunk.txt انتخاب کنید (اولین لاین)
+          head -1 my_chunk.txt > sample.txt
+          SAMPLE_CONFIG=$(cat sample.txt)
+          echo "Testing sample config: $SAMPLE_CONFIG"
+          python3 -c "
+import subprocess, time, json, os, socket, urllib.parse, sys, requests
+
+XRAY_PATH = './xray-core/xray'
+TEST_URL = 'http://cp.cloudflare.com/generate_204'
+socks_port = 12345
+
+def extract_host_port(vless_url):
+    try:
+        parsed = urllib.parse.urlparse(vless_url)
+        netloc = parsed.netloc.split('@')[-1].split('/')[0].split('?')[0]
+        if netloc.startswith('['):
+            bracket_end = netloc.find(']')
+            if bracket_end == -1: return None
+            host = netloc[1:bracket_end]
+            remainder = netloc[bracket_end+1:]
+            if remainder.startswith(':'): port = int(remainder[1:])
+            else: port = 443
+        else:
+            if ':' in netloc:
+                host, port_str = netloc.split(':', 1)
+                port = int(port_str)
+            else:
+                host = netloc
+                port = 443
+        return host, port
+    except:
+        return None
+
+line = '$SAMPLE_CONFIG'
+hp = extract_host_port(line)
+if not hp:
+    print('Failed to extract host/port')
+    sys.exit(1)
+print(f'Host: {hp[0]}, Port: {hp[1]}')
+
+# ساخت کانفیگ ساده (فقط VLESS خام بدون streamSettings خاص)
+config = {
+    'log': {'loglevel': 'none'},
+    'inbounds': [{
+        'port': socks_port,
+        'listen': '127.0.0.1',
+        'protocol': 'socks',
+        'settings': {'auth': 'noauth', 'udp': True}
+    }],
+    'outbounds': [{
+        'protocol': 'vless',
+        'settings': {
+            'vnext': [{
+                'address': hp[0],
+                'port': hp[1],
+                'users': [{'id': line.split('://')[1].split('@')[0], 'encryption': 'none'}]
+            }]
+        }
+    }]
+}
+with open('sample_config.json', 'w') as f:
+    json.dump(config, f)
+
+# اجرای Xray
+proc = subprocess.Popen([XRAY_PATH, '-c', 'sample_config.json'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+time.sleep(2)  # صبر برای بالا آمدن پروکسی
+
+try:
+    proxies = {'http': f'socks5://127.0.0.1:{socks_port}', 'https': f'socks5://127.0.0.1:{socks_port}'}
+    start = time.time()
+    r = requests.get(TEST_URL, proxies=proxies, timeout=10)
+    latency = (time.time() - start) * 1000
+    if r.status_code == 204:
+        print(f'✅ SUCCESS! Latency: {latency:.0f}ms')
+    else:
+        print(f'❌ Failed: HTTP {r.status_code}')
+except Exception as e:
+    print(f'❌ Exception: {e}')
+finally:
+    proc.terminate()
+    time.sleep(1)
+    proc.kill()
+    os.remove('sample_config.json')
+"
+
       - name: Test and Filter Configs (Real Delay with Xray)
         run: |
-          python3 test_configs_xray.py my_chunk.txt result_${{ matrix.runner }}.txt
+          python3 test_configs_xray_final.py my_chunk.txt result_${{ matrix.runner }}.txt
 
       - name: Upload result chunk
         uses: actions/upload-artifact@v4
