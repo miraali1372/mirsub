@@ -5,12 +5,10 @@ on:
     - cron: '0 * * * *'
   workflow_dispatch:
 
-# تعریف تعداد رانرهای موازی (مثلاً 4 تا)
 env:
-  NUM_RUNNERS: 4
+  NUM_RUNNERS: 4   # تعداد رانرهای موازی (همین 4 خوبه، می‌تونی تا 8 هم برش داری)
 
 jobs:
-  # Job شماره 1: گرفتن لیست و split کردنش
   prepare:
     runs-on: ubuntu-latest
     outputs:
@@ -22,24 +20,21 @@ jobs:
       - name: Fetch Raw Configs
         run: |
           curl -L -o raw.txt "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt"
-          echo "Total configs fetched:"
-          wc -l raw.txt
+          echo "✅ Total configs fetched: $(wc -l < raw.txt)"
 
       - name: Remove Duplicates and Comments
         run: |
           grep -v "^#" raw.txt | grep -v "^$" | sort | uniq > unique.txt
+          echo "✅ Unique configs: $(wc -l < unique.txt)"
 
       - name: Split configs into chunks
         id: split
         run: |
-          # این کار یه ماتریس برای اجرای موازی می‌سازه
           total_lines=$(wc -l < unique.txt)
           chunk_size=$(( ($total_lines + $NUM_RUNNERS - 1) / $NUM_RUNNERS ))
-          
-          # فایل unique.txt رو نگه دار برای jobهای بعدی
           echo "Chunk size: $chunk_size"
-          
-          # ساختن یه ماتریس شامل شماره رانرها
+
+          # ساختن یه ماتریس ساده برای رانرها
           matrix_json="{\"runner\":["
           for i in $(seq 1 $NUM_RUNNERS); do
             matrix_json+="\"$i\""
@@ -49,8 +44,7 @@ jobs:
           done
           matrix_json+="]}"
           echo "matrix=$matrix_json" >> $GITHUB_OUTPUT
-          
-          # ذخیره فایل یکتا شده برای jobهای بعدی (به عنوان artifact)
+
           mkdir -p share
           cp unique.txt share/unique.txt
 
@@ -60,7 +54,6 @@ jobs:
           name: shared-unique
           path: share/
 
-  # Job شماره 2: تست موازی روی هر تیکه
   test:
     needs: prepare
     runs-on: ubuntu-latest
@@ -83,12 +76,10 @@ jobs:
           chunk_size=$(( ($total_lines + $NUM_RUNNERS - 1) / $NUM_RUNNERS ))
           start_line=$(( (${{ matrix.runner }} - 1) * $chunk_size + 1 ))
           end_line=$(( ${{ matrix.runner }} * $chunk_size ))
-          
-          # استخراج تیکه مربوط به این رانر
           sed -n "${start_line},${end_line}p" unique.txt > my_chunk.txt
-          echo "Testing chunk ${{ matrix.runner }} ($(wc -l < my_chunk.txt) configs)"
+          echo "🔹 Runner ${{ matrix.runner }} testing $(wc -l < my_chunk.txt) configs"
 
-      - name: Test and Filter Configs
+      - name: Test and Filter Configs (with country flag)
         run: |
           python3 test_configs.py my_chunk.txt result_${{ matrix.runner }}.txt
 
@@ -98,7 +89,6 @@ jobs:
           name: result-chunk-${{ matrix.runner }}
           path: result_${{ matrix.runner }}.txt
 
-  # Job شماره 3: جمع‌آوری نتایج
   merge:
     needs: test
     runs-on: ubuntu-latest
@@ -118,7 +108,7 @@ jobs:
       - name: Merge results
         run: |
           cat chunks/result_*.txt > subscription.txt
-          echo "Total valid configs: $(wc -l < subscription.txt)"
+          echo "✅ Total valid configs with flags: $(wc -l < subscription.txt)"
 
       - name: Commit and Push Changes
         run: |
