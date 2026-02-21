@@ -1,0 +1,45 @@
+name: Update Subscription
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Fetch Raw Configs
+        run: |
+          curl -L -o raw.txt "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt"
+          wc -l raw.txt || echo "0"
+
+      - name: Remove Duplicates and Comments
+        run: |
+          grep -v "^#" raw.txt | grep -v "^$" | sort | uniq > unique.txt
+          wc -l unique.txt || echo "0"
+
+      - name: Test and Filter Configs
+        run: |
+          python3 test_configs.py
+
+      - name: Update Subscription File
+        run: |
+          if [ -f result.txt ] && [ -s result.txt ]; then
+            cp result.txt subscription.txt
+          else
+            > subscription.txt
+          fi
+
+      - name: Commit and Push Changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add subscription.txt
+          if ! git diff --quiet --staged; then
+            git commit -m "Auto-update subscription"
+            git push
+          fi
