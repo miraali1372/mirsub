@@ -7,7 +7,7 @@ on:
 
 env:
   NUM_RUNNERS: 4
-  THRESHOLD_MS: 150   # مقدار آستانه پینگ
+  THRESHOLD_MS: 100   # مقدار آستانه پینگ
 
 jobs:
   prepare:
