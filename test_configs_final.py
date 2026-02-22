@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, Tuple
 
 REQUEST_DELAY = 0.02
-MAX_WORKERS = 200
+MAX_WORKERS = 20
 
 def extract_host_port(vless_url: str) -> Optional[Tuple[str, int]]:
     try:
