@@ -23,10 +23,10 @@ jobs:
           curl -L -o raw.txt "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt"
           echo "✅ Total configs fetched: $(wc -l < raw.txt)"
 
-      - name: Remove Duplicates and Comments
+      - name: Remove Duplicates and Comments (strip fragment)
         run: |
-          grep -v "^#" raw.txt | grep -v "^$" | sort | uniq > unique.txt
-          echo "✅ Unique configs: $(wc -l < unique.txt)"
+          grep -v "^#" raw.txt | grep -v "^$" | awk -F'#' '{print $1}' | sort -u > unique.txt
+          echo "✅ Unique configs after stripping fragment: $(wc -l < unique.txt)"
 
       - name: Split configs into chunks
         id: split
@@ -107,7 +107,7 @@ jobs:
       - name: Merge results
         run: |
           if ls chunks/result_*.txt 1> /dev/null 2>&1; then
-            cat chunks/result_*.txt > subscription.txt
+            cat chunks/result_*.txt | sort -u > subscription.txt
             echo "✅ Total valid configs after first test: $(wc -l < subscription.txt)"
           else
             echo "⚠️ No result files found!"
