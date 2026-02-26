@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  NUM_RUNNERS: 4
+  NUM_RUNNERS: 8
   THRESHOLD_MS: 100   # مقدار آستانه پینگ
 
 jobs:
@@ -23,10 +23,13 @@ jobs:
           curl -L -o raw.txt "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt"
           echo "✅ Total configs fetched: $(wc -l < raw.txt)"
 
-      - name: Remove Duplicates and Comments (strip fragment)
+      - name: Clean and Deduplicate (strip fragment & trim)
         run: |
-          grep -v "^#" raw.txt | grep -v "^$" | awk -F'#' '{print $1}' | sort -u > unique.txt
-          echo "✅ Unique configs after stripping fragment: $(wc -l < unique.txt)"
+          # فقط خطوط vless را نگه دار، fragment را حذف کن، فاصله‌ها را پاک کن و یکتا ساز
+          grep "^vless://" raw.txt | \
+          awk -F'#' '{gsub(/^[ \t]+|[ \t]+$/, "", $1); print $1}' | \
+          sort -u > unique.txt
+          echo "✅ Unique configs after cleaning: $(wc -l < unique.txt)"
 
       - name: Split configs into chunks
         id: split
@@ -104,11 +107,16 @@ jobs:
           path: chunks/
           merge-multiple: true
 
-      - name: Merge results
+      - name: Merge results (unique)
         run: |
           if ls chunks/result_*.txt 1> /dev/null 2>&1; then
             cat chunks/result_*.txt | sort -u > subscription.txt
-            echo "✅ Total valid configs after first test: $(wc -l < subscription.txt)"
+            echo "✅ Total valid configs after merge: $(wc -l < subscription.txt)"
+            # گزارش تعداد تکراری‌های احتمالی قبل از یکتا‌سازی
+            duplicates=$(cat chunks/result_*.txt | sort | uniq -d | wc -l)
+            if [ $duplicates -gt 0 ]; then
+              echo "⚠️ Warning: $duplicates duplicates found in merged results (before sort -u)"
+            fi
           else
             echo "⚠️ No result files found!"
             > subscription.txt
@@ -138,19 +146,29 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
-      - name: Final test and filter (remove > threshold)
+      - name: Final test and filter
         run: |
           python3 test_configs_final.py subscription.txt subscription_final.txt ${{ env.THRESHOLD_MS }}
+          # یکتا‌سازی مجدد برای اطمینان
+          sort -u subscription_final.txt > subscription_final_unique.txt
+          mv subscription_final_unique.txt subscription_final.txt
+          echo "✅ Final valid configs after final test: $(wc -l < subscription_final.txt)"
 
       - name: Replace subscription with final version
         run: |
           if [ -f subscription_final.txt ]; then
             mv subscription_final.txt subscription.txt
-            echo "✅ Final valid configs: $(wc -l < subscription.txt)"
+            echo "✅ Final unique configs: $(wc -l < subscription.txt)"
           else
             echo "⚠️ Final test produced no results"
             > subscription.txt
           fi
+
+      - name: Ensure final file is unique (one more time)
+        run: |
+          sort -u subscription.txt > subscription_unique.txt
+          mv subscription_unique.txt subscription.txt
+          echo "✅ Final unique configs after extra sort: $(wc -l < subscription.txt)"
 
       - name: Commit and Push Changes
         run: |
