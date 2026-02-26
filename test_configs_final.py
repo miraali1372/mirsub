@@ -1,4 +1,3 @@
-# test_configs_final.py
 import socket
 import time
 import urllib.parse
@@ -56,6 +55,7 @@ def add_flag(config: str, country: str) -> str:
         return f"{base}#{country}"
 
 def test_one_config(line: str, threshold_ms: int) -> Optional[str]:
+    line = line.strip()  # حذف فاصله‌های اضافی
     hp = extract_host_port(line)
     if not hp:
         return None
