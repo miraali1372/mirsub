@@ -26,7 +26,7 @@ jobs:
       - name: Normalize and Deduplicate (case-insensitive)
         run: |
           # فقط خطوط vless را نگه دار، fragment را حذف کن، فاصله‌ها را پاک کن، به lowercase تبدیل کن و یکتا ساز
-          grep "^vless://" raw.txt | \
+          cat raw.txt | \
           awk -F'#' '{gsub(/^[ \t]+|[ \t]+$/, "", $1); print tolower($1)}' | \
           sort -u > unique.txt
           echo "✅ Unique configs after normalization: $(wc -l < unique.txt)"
