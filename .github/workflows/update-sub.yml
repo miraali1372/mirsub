@@ -20,7 +20,7 @@ jobs:
 
       - name: Fetch Raw Configs
         run: |
-          curl -L -o raw.txt "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt"
+          curl -L -o raw.txt "https://raw.githubusercontent.com/barry-far/V2ray-config/main/All_Configs_Sub.txt"
           echo "✅ Total configs fetched: $(wc -l < raw.txt)"
 
       - name: Normalize and Deduplicate (case-insensitive)
