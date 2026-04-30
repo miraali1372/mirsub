@@ -87,7 +87,7 @@ def main():
     threshold_ms = int(sys.argv[3]) if len(sys.argv) >= 4 else 150
 
     with open(input_file, 'r', encoding='utf-8') as f:
-        lines = [line.strip() for line in f if line.strip() and line.startswith('vless://')]
+        lines = [line.strip() for line in f if line.strip()]
 
     total = len(lines)
     print(f"Testing {total} configs (threshold={threshold_ms}ms)...")
