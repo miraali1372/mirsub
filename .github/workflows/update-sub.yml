@@ -20,16 +20,43 @@ jobs:
 
       - name: Fetch Raw Configs
         run: |
-          curl -L -o raw.txt "https://raw.githubusercontent.com/barry-far/V2ray-config/main/All_Configs_Sub.txt"
-          echo "✅ Total configs fetched: $(wc -l < raw.txt)"
+          > raw.txt
+          urls=(
+            "https://raw.githubusercontent.com/barry-far/V2ray-config/main/All_Configs_Sub.txt"
+            "https://raw.githubusercontent.com/mohamadfg-dev/telegram-v2ray-configs-collector/refs/heads/main/category/vless.txt"
+            "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt"
+            "https://raw.githubusercontent.com/V2RayRoot/V2RayConfig/refs/heads/main/Config/vless.txt"
+            "https://raw.githubusercontent.com/MatinGhanbari/v2ray-configs/main/subscriptions/filtered/subs/vless.txt"
+            "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt"
+            "https://raw.githubusercontent.com/F0rc3Run/F0rc3Run/main/splitted-by-protocol/vless.txt"
+            "https://raw.githubusercontent.com/arshiacomplus/v2rayExtractor/refs/heads/main/vless.html"
+            "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/refs/heads/main/Protocols/vless.txt"
+            "https://raw.githubusercontent.com/hamedcode/port-based-v2ray-configs/main/sub/vless.txt"
+            "https://raw.githubusercontent.com/10ium/ScrapeAndCategorize/refs/heads/main/output_configs/Vless.txt"
+            "https://raw.githubusercontent.com/10ium/MihomoSaz/main/Sublist/arshiacomplus/v2rayExtractor_vless.yaml"
+            "https://raw.githubusercontent.com/Mosifree/-FREE2CONFIG/refs/heads/main/Reality"
+            "https://raw.githubusercontent.com/10ium/V2Hub3/refs/heads/main/Split/Normal/reality"
+            "https://raw.githubusercontent.com/itsyebekhe/PSG/main/lite/subscriptions/meta/reality"
+          )
+          
+          for url in "${urls[@]}"; do
+            echo "📥 Downloading from: $url"
+            curl -L -s --max-time 15 "$url" >> raw.txt || echo "⚠️ Failed to download from $url"
+            echo "" >> raw.txt
+          done
+          echo "✅ Total raw lines fetched: $(wc -l < raw.txt)"
 
-      - name: Normalize and Deduplicate (case-insensitive)
+      - name: Normalize and Deduplicate (Smart Core-based)
         run: |
-          # فقط خطوط vless را نگه دار، fragment را حذف کن، فاصله‌ها را پاک کن، به lowercase تبدیل کن و یکتا ساز
-          cat raw.txt | \
-          awk -F'#' '{gsub(/^[ \t]+|[ \t]+$/, "", $1); print tolower($1)}' | \
-          sort -u > unique.txt
-          echo "✅ Unique configs after normalization: $(wc -l < unique.txt)"
+          grep -oiE "vless://[^\"' <]+" raw.txt | sed 's/\r//g' > extracted.txt
+          sed -i 's/#.*//' extracted.txt
+          awk -F'?' '{
+            core = tolower($1);
+            if (!seen[core]++) {
+              print $0
+            }
+          }' extracted.txt > unique.txt
+          echo "✅ Unique configs after strict core deduplication: $(wc -l < unique.txt)"
 
       - name: Split configs into chunks
         id: split
@@ -52,6 +79,7 @@ jobs:
         with:
           name: shared-unique
           path: share/
+          retention-days: 1
 
   test:
     needs: prepare
@@ -79,7 +107,7 @@ jobs:
           echo "🔹 Runner ${{ matrix.runner }} testing $(wc -l < my_chunk.txt) configs"
 
       - name: Install dependencies
-        run: pip install requests
+        run: pip3 install requests --break-system-packages
 
       - name: Test and Filter Configs (TCP Ping with threshold)
         run: |
@@ -90,6 +118,7 @@ jobs:
         with:
           name: result-chunk-${{ matrix.runner }}
           path: result_${{ matrix.runner }}.txt
+          retention-days: 1
 
   merge:
     needs: test
@@ -122,6 +151,7 @@ jobs:
         with:
           name: subscription-merged
           path: subscription.txt
+          retention-days: 1
 
   final_test:
     needs: merge
@@ -139,12 +169,11 @@ jobs:
           path: ./
 
       - name: Install dependencies
-        run: pip install requests
+        run: pip3 install requests --break-system-packages
 
       - name: Final test and filter
         run: |
           python3 test_configs_final.py subscription.txt subscription_final.txt ${{ env.THRESHOLD_MS }}
-          # یکتا‌سازی مجدد برای اطمینان (با حفظ case اسم‌ها)
           sort -u subscription_final.txt > subscription_final_unique.txt
           mv subscription_final_unique.txt subscription_final.txt
           echo "✅ Final valid configs after final test: $(wc -l < subscription_final.txt)"
