@@ -7,7 +7,7 @@ on:
 
 env:
   NUM_RUNNERS: 4
-  THRESHOLD_MS: 350   # Max latency threshold in ms
+  THRESHOLD_MS: 500   # Max latency threshold in ms
 
 jobs:
   prepare:
@@ -61,10 +61,17 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: '3.11'
+          node-version: 22
+
+      - name: Install official Xray-core
+        run: |
+          curl -L -s https://github.com/XTLS/Xray-core/releases/download/v26.9.9/Xray-linux-64.zip -o /tmp/xray.zip
+          sudo unzip -o /tmp/xray.zip xray -d /usr/local/bin/
+          sudo chmod +x /usr/local/bin/xray
+          xray version
 
       - name: Download unique.txt
         uses: actions/download-artifact@v4
@@ -81,9 +88,9 @@ jobs:
           sed -n "${start_line},${end_line}p" unique.txt > my_chunk.txt
           echo "🔹 Runner ${{ matrix.runner }} testing $(wc -l < my_chunk.txt) configs"
 
-      - name: Deep Connectivity & Handshake Test
+      - name: Real Xray Core Proxy & Data Tunnel Test
         run: |
-          python3 test_configs_final.py my_chunk.txt result_${{ matrix.runner }}.txt ${{ env.THRESHOLD_MS }}
+          node test_with_xray.mjs my_chunk.txt result_${{ matrix.runner }}.txt ${{ env.THRESHOLD_MS }}
 
       - name: Upload result chunk
         uses: actions/upload-artifact@v4

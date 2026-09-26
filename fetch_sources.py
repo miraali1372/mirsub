@@ -22,16 +22,12 @@ SOURCES = [
     "https://raw.githubusercontent.com/Mosifree/-FREE2CONFIG/refs/heads/main/Reality",
     "https://raw.githubusercontent.com/10ium/V2Hub3/refs/heads/main/Split/Normal/reality",
     "https://raw.githubusercontent.com/itsyebekhe/PSG/main/lite/subscriptions/meta/reality",
-    "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/reality",
     "https://raw.githubusercontent.com/Surfboardv2ray/Proxy-sorter/main/sub/normal/reality",
-    "https://raw.githubusercontent.com/yebekhe/TVC/main/subscriptions/xray/normal/reality",
-    
-    # VLESS & Multi-protocol Iran-tested Sources
+    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
+
+    # VLESS & Trojan Iran-tested Sources
     "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt",
     "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/trojan.txt",
-    "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/ss.txt",
-    "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/vless",
-    "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/trojan",
     "https://raw.githubusercontent.com/mohamadfg-dev/telegram-v2ray-configs-collector/refs/heads/main/category/vless.txt",
     "https://raw.githubusercontent.com/MatinGhanbari/v2ray-configs/main/subscriptions/filtered/subs/vless.txt",
     "https://raw.githubusercontent.com/F0rc3Run/F0rc3Run/main/splitted-by-protocol/vless.txt",
@@ -40,8 +36,7 @@ SOURCES = [
     "https://raw.githubusercontent.com/hamedcode/port-based-v2ray-configs/main/sub/vless.txt",
     "https://raw.githubusercontent.com/10ium/ScrapeAndCategorize/refs/heads/main/output_configs/Vless.txt",
     "https://raw.githubusercontent.com/10ium/MihomoSaz/main/Sublist/arshiacomplus/v2rayExtractor_vless.yaml",
-    "https://raw.githubusercontent.com/mahsanet/MahsaZero/master/sub.txt",
-    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
+    "https://raw.githubusercontent.com/MrPooyaCou/V2ray-Configs/main/Splitted-By-Protocol/vless.txt",
 ]
 
 def fetch_single_url(url: str) -> List[str]:
